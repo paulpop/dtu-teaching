@@ -1,62 +1,163 @@
-# Installing the dependancies (Windows Guide)
+# TSN Test Case Generator
 
-## First install these two dependancies using pip:
+Contacts: 
+Andrei-Robert Cuzenco s242817@student.dtu.dk
+Paul Pop paupo@dtu.dk
+
+A tool for generating Time-Sensitive Networking (TSN) test cases with configurable network topologies and stream configurations.
+
+## Documentation
+
+- [File Format Specifications](file_format_specs.md): Details about the input and output file formats used by the tool.
+
+## Usage Guide
+
+### Basic Usage
+
+Run the generator with default configuration:
+```bash
+python3 tsn-test-case-generator.py
 ```
+
+### Configuration
+
+The tool uses a `config.ini` file for all settings. Key configuration options include:
+
+1. Network Topology Settings:
+```ini
+[General]
+NETWORK_TYPE = mesh_graph    # Type of network topology
+NUM_SWITCHES = 32           # Number of switches in the network
+NODES_PER_SWITCH = 3       # End systems per switch
+```
+
+Supported network types:
+- `cycle_graph` or `ring_topology`: Ring network
+- `path_graph`: Linear network
+- `mesh_graph`: 2D mesh network
+- `random_geometric_graph`: Random network with geometric constraints
+- `binomial_graph`: Random network with binomial degree distribution
+- `expected_nd_graph`: Random network with expected node degree
+
+2. Stream Configuration:
+```ini
+[TrafficTypes]
+ATS = 2    # Number of streams per end system
+
+[ats]
+period = [500,1000,2000]    # Possible periods in microseconds
+size = [500,1500]           # Size range in bytes
+deadline = [1000,20000]     # Deadline range in microseconds
+```
+
+### Output Files
+
+The tool generates several files in the specified output directory:
+
+1. `topology.csv`: Network topology definition including:
+   - Switches and their ports
+   - End systems
+   - Network links
+
+2. `streams.csv`: Stream configurations including:
+   - Priority Code Point (PCP)
+   - Stream names
+   - Source and destination nodes
+   - Size, period, and deadline
+
+3. `topology.png`: Visual representation of the network
+
+4. OMNeT++ files (if enabled):
+   - `Network.ned`: Network description
+   - `omnetpp.ini`: Simulation configuration
+
+### Example Usage
+
+1. Create a mesh network with 16 switches:
+```ini
+[General]
+NETWORK_TYPE = mesh_graph
+NUM_SWITCHES = 16
+NODES_PER_SWITCH = 4
+```
+
+2. Configure high-priority streams:
+```ini
+[TrafficTypes]
+ATS = 3    # 3 streams per end system
+
+[ats]
+period = [500,1000]     # More frequent periods
+size = [64,128]         # Smaller packets
+deadline = [1000,5000]  # Stricter deadlines
+```
+
+Total streams generated = NUM_SWITCHES × NODES_PER_SWITCH × streams_per_es
+In this example: 16 × 4 × 3 = 192 streams
+
+### Visualization
+
+Enable topology visualization:
+```ini
+[General]
+SHOW_TOPOLOGY = True
+```
+
+This will display and save a visual representation of the network topology.
+
+## Installation Guide
+
+### Windows Installation
+
+1. Install Python dependencies using pip:
+```bash
 python3 -m pip install networkx matplotlib
 ```
 
-## Then install graphviz using this link:
-https://gitlab.com/graphviz/graphviz/-/package_files/6164164/download
+2. Install Graphviz:
+   - Download from: https://gitlab.com/graphviz/graphviz/-/package_files/6164164/download
+   - Note: Other versions may not be compatible
 
-Note here that any other link won't work
+3. Install Microsoft Build Tools:
+   - Download from: https://visualstudio.microsoft.com/visual-cpp-build-tools/
 
-## Install Microsoft Build Tools from this link
-https://visualstudio.microsoft.com/visual-cpp-build-tools/
-
-## Then you can install the pygraphviz using the following commmand:
-    
-```
+4. Install pygraphviz with specific configurations:
+```bash
 python3 -m pip install --config-settings="--global-option=build_ext" `
               --config-settings="--global-option=-IC:\Program Files\Graphviz\include" `
               --config-settings="--global-option=-LC:\Program Files\Graphviz\lib" `
               pygraphviz
 ```
 
-## To run the code afterwards use:
-```
-python3 generatetsndata.py
-```
+### macOS Installation
 
-# Installing the dependancies (macOS Guide)
-
-## First install graphviz using brew
-```
+1. Install Graphviz using Homebrew:
+```bash
 brew install graphviz
 ```
 
-## Then install these dependancies using pip:
-```
+2. Install Python dependencies:
+```bash
 python3 -m pip install networkx matplotlib pygraphviz
 ```
 
-## To run the code afterwards use:
-```
-python3 generatetsndata.py
-```
+### Linux/Ubuntu Installation
 
-# Installing the dependancies (Linux/Ubuntu Guide)
-
-## First install two packages using apt
-```
+1. Install Graphviz packages:
+```bash
 sudo apt-get install graphviz graphviz-dev
 ```
 
-## Then install these dependancies using pip:
-```
+2. Install Python dependencies:
+```bash
 python3 -m pip install networkx matplotlib pygraphviz
 ```
 
-## To run the code afterwards use:
-```
-python3 generatetsndata.py
-```
+## Contributing
+
+Feel free to submit issues and enhancement requests.
+
+## License
+
+MIT License
+
