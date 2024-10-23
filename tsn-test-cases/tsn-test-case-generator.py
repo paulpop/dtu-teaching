@@ -4,64 +4,64 @@ import random
 import configparser
 import csv
 import networkx as nx
-import pygraphviz as pgv
+import math
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-# Load configuration
-config = configparser.ConfigParser()
-ini_path = os.path.join(os.getcwd(),'config.ini')
-config.read(ini_path)
-
-# General settings
-SHOW_TOPOLOGY = config.getboolean('General', 'SHOW_TOPOLOGY', fallback=False)
-GENERATE_OMNET_FILES = config.getboolean('General', 'GENERATE_OMNET_FILES', fallback=True)
-NETWORK_TYPE = config.get('General', 'NETWORK_TYPE', fallback='ring_topology')
-NUM_SWITCHES = config.getint('General', 'NUM_SWITCHES', fallback=32)
-NODES_PER_SWITCH = config.getint('General', 'NODES_PER_SWITCH', fallback=3)
-OUTPUT_DIR = config.get('Output', 'OUTPUT_DIR', fallback='simulation_output')
-
-# Units configuration
-PeriodUnit = config.get('Units', 'PeriodUnit', fallback='MICROSECOND')
-DeadlineUnit = config.get('Units', 'DeadlineUnit', fallback='MICROSECOND')
-SizeUnit = config.get('Units', 'SizeUnit', fallback='BYTES')
-
-traffic_types = {}
-for tt in config.items('TrafficTypes'):
-    tt_name = tt[0]
-    flows_per_node = int(tt[1])
-    traffic_types[tt_name] = {
-        'FlowsPerNode': flows_per_node,
-        'Parameters': {}
-    }
-    print(tt_name)
-    # Load traffic type parameters
-    if config.has_section(tt_name):
-        params = config.items(tt_name)
-        for param in params:
-            key = param[0]
-            value = param[1]
-            if key == 'period' or key == 'deadline':
-                # Parse list of integers
-                value = [int(x.strip()) for x in value.strip('[]').split(',')]
-            elif key == 'size' or key == 'traffic_class':
-                value = [int(x.strip()) for x in value.strip('[]').split(',')]
-            traffic_types[tt_name]['Parameters'][key] = value
-
 def create_network():
-    if NETWORK_TYPE == 'ring_topology':
+    """Creates network topology based on configuration"""
+    if NETWORK_TYPE == 'cycle_graph' or NETWORK_TYPE == 'ring_topology':
         G = nx.cycle_graph(NUM_SWITCHES)
-        mapping = {i: f'Switch_{i+1}' for i in range(NUM_SWITCHES)}
-        G = nx.relabel_nodes(G, mapping)
     elif NETWORK_TYPE == 'path_graph':
         G = nx.path_graph(NUM_SWITCHES)
-        mapping = {i: f'Switch_{i+1}' for i in range(NUM_SWITCHES)}
+    elif NETWORK_TYPE == 'mesh_graph':
+        width = math.ceil(math.sqrt(NUM_SWITCHES))
+        height = math.ceil(NUM_SWITCHES / width)
+        G = nx.grid_2d_graph(height, width)
+        # Remove extra nodes if any
+        while G.number_of_nodes() > NUM_SWITCHES:
+            G.remove_node(list(G.nodes())[-1])
+        # Relabel nodes to match expected format
+        mapping = {node: i for i, node in enumerate(G.nodes())}
         G = nx.relabel_nodes(G, mapping)
+    elif NETWORK_TYPE == 'random_geometric_graph':
+        # Use reasonable radius for connectivity
+        radius = math.sqrt(2.0 * math.log(NUM_SWITCHES) / NUM_SWITCHES)
+        while True:
+            G = nx.random_geometric_graph(NUM_SWITCHES, radius)
+            if nx.is_connected(G):
+                break
+            radius += 0.1
+    elif NETWORK_TYPE == 'binomial_graph':
+        # Use reasonable probability for connectivity
+        p = 2 * math.log(NUM_SWITCHES) / NUM_SWITCHES
+        while True:
+            G = nx.binomial_graph(NUM_SWITCHES, p)
+            if nx.is_connected(G):
+                break
+            p += 0.1
+    elif NETWORK_TYPE == 'expected_nd_graph':
+        # Use reasonable expected degree
+        exp_degree = math.ceil(math.log2(NUM_SWITCHES))
+        node_weights = [exp_degree for _ in range(NUM_SWITCHES)]
+        while True:
+            G = nx.expected_degree_graph(node_weights)
+            G = nx.Graph(G)  # Remove parallel edges
+            G.remove_edges_from(nx.selfloop_edges(G))  # Remove self-loops
+            if nx.is_connected(G):
+                break
+            exp_degree += 1
+            node_weights = [exp_degree for _ in range(NUM_SWITCHES)]
     else:
-        raise ValueError('Invalid NETWORK_TYPE specified in config.ini')
+        raise ValueError(f'Invalid NETWORK_TYPE specified in config.ini: {NETWORK_TYPE}')
+
+    # Relabel nodes to match Switch_X format
+    mapping = {i: f'Switch_{i+1}' for i in range(NUM_SWITCHES)}
+    G = nx.relabel_nodes(G, mapping)
     return G
 
 def generate_topology(G):
+    """Generates topology description including switches and end systems"""
     devices = []
     links = []
 
@@ -73,7 +73,7 @@ def generate_topology(G):
     es_counter = 1
     for node in G.nodes():
         for i in range(NODES_PER_SWITCH):
-            es_name = f'Node_{es_counter}'
+            es_name = f'ES_{es_counter}'
             devices.append(['ES', es_name, 1])
             link_id = f'Link_{len(links)+1}'
             links.append(['LINK', link_id, es_name, 1, node, i+1])
@@ -99,22 +99,28 @@ def generate_topology(G):
     return devices, links
 
 def generate_streams(devices):
+    """Generates stream configurations based on traffic types"""
     streams = []
     stream_id = 1
     es_nodes = [device[1] for device in devices if device[0] == 'ES']
+    
     for tt_name, tt_info in traffic_types.items():
-        flows_per_node = tt_info['FlowsPerNode']
+        streams_per_es = tt_info['StreamsPerES']  # Updated from FlowsPerNode
         params = tt_info['Parameters']
+        
         for es in es_nodes:
-            for _ in range(flows_per_node):
+            for _ in range(streams_per_es):
                 dest = random.choice([n for n in es_nodes if n != es])
                 stream_name = f'Stream_{stream_id}'
-                traffic_class = random.randint(0,7)
-                size = random.randint(params.get('size', 100)[0], params.get('size', 100)[1])
+                # PCP (Priority Code Point) instead of traffic class
+                pcp = random.randint(0, 7)
+                size = random.randint(params.get('size', [100])[0], params.get('size', [100])[1])
                 period = random.choice(params.get('period', [1000]))
-                deadline = random.randint(params.get('deadline', 2*period)[0], params.get('deadline', 2*period)[1])
+                deadline = random.randint(params.get('deadline', [period, 2*period])[0], 
+                                       params.get('deadline', [period, 2*period])[1])
+                
                 stream = [
-                    traffic_class,
+                    pcp,
                     stream_name,
                     tt_name,
                     es,
@@ -129,73 +135,136 @@ def generate_streams(devices):
     # Write to streams.csv
     with open(os.path.join(OUTPUT_DIR, 'streams.csv'), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
+        writer.writerow(['PCP', 'StreamName', 'StreamType', 'SourceNode', 'DestinationNode', 
+                        'Size', 'Period', 'Deadline'])  # Header
         for stream in streams:
             writer.writerow(stream)
     return streams
 
 def visualize_topology(G):
-    A = nx.nx_agraph.to_agraph(G)
-    A.layout('circo')
-    A.draw('topology.png')
-    plt.imshow(plt.imread('topology.png'))
-    plt.axis('off')
-    plt.show()
+    """Creates a visualization of the network topology"""
+    plt.figure(figsize=(12, 8))
+    pos = nx.spring_layout(G)
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', 
+            node_size=500, font_size=8, font_weight='bold')
+    plt.title(f'Network Topology: {NETWORK_TYPE} ({NUM_SWITCHES} switches)')
+    plt.savefig(os.path.join(OUTPUT_DIR, 'topology.png'))
+    if SHOW_TOPOLOGY:
+        plt.show()
+    plt.close()
 
 def generate_ned_file(G):
-    # Create NED file content
+    """Generates OMNeT++ network description file"""
     ned_lines = []
+    ned_lines.append('package tsn;')
+    ned_lines.append('')
+    ned_lines.append('import inet.node.ethernet.EtherSwitch;')
+    ned_lines.append('import inet.node.inet.StandardHost;')
+    ned_lines.append('import inet.networklayer.configurator.ipv4.Ipv4NetworkConfigurator;')
+    ned_lines.append('')
     ned_lines.append(f'network TSN_Network {{')
-    ned_lines.append(f'    submodules:')
+    ned_lines.append('    @display("bgb=1000,1000");')
+    ned_lines.append('    submodules:')
+    ned_lines.append('        configurator: Ipv4NetworkConfigurator {')
+    ned_lines.append('            @display("p=100,100");')
+    ned_lines.append('        }')
     for node in G.nodes():
-        if node.startswith('Switch'):
-            ned_lines.append(f'        {node}: EtherSwitch {{}}')
-        else:
-            ned_lines.append(f'        {node}: StandardHost {{}}')
-    ned_lines.append(f'    connections:')
+        ned_lines.append(f'        {node}: EtherSwitch {{}}')
+    ned_lines.append('    connections:')
     for edge in G.edges():
-        ned_lines.append(f'        {edge[0]}.pppg++ <--> Eth100M <--> {edge[1]}.pppg++;')
+        ned_lines.append(f'        {edge[0]}.ethg++ <--> {{datarate = 100Mbps;}} <--> {edge[1]}.ethg++;')
     ned_lines.append('}')
 
-    # Write to .ned file
-    with open(os.path.join(OUTPUT_DIR, 'network.ned'), 'w') as ned_file:
+    with open(os.path.join(OUTPUT_DIR, 'Network.ned'), 'w') as ned_file:
         ned_file.write('\n'.join(ned_lines))
 
 def generate_ini_file(streams):
+    """Generates OMNeT++ initialization file"""
     ini_lines = []
     ini_lines.append('[General]')
     ini_lines.append('network = TSN_Network')
-    ini_lines.append('sim-time-limit = 10.0s')
-    ini_lines.append('**.connFIXdelay = 0ns')
-    ini_lines.append('**.connFIXdataRate = 100Mbps')
-    ini_lines.append('**.connFIXber = 0')
-
-    # Configure applications
-    app_index = 0
+    ini_lines.append('sim-time-limit = 1s')
+    ini_lines.append('')
+    ini_lines.append('# Switch configuration')
+    ini_lines.append('**.switch*.eth[*].mac.queue.typename = "EtherQosQueue"')
+    ini_lines.append('**.switch*.eth[*].mac.queue.dataQueue.typename = "DropTailQueue"')
+    ini_lines.append('')
+    
+    # Configure traffic streams
     for stream in streams:
-        traffic_class, stream_name, tt_name, src, dest, size, period, deadline = stream
-        ini_lines.append(f'**.{src}.numApps = {app_index + 1}')
-        ini_lines.append(f'**.{src}.app[{app_index}].typename = "UdpBasicApp"')
-        ini_lines.append(f'**.{src}.app[{app_index}].destAddresses = "{dest}"')
-        ini_lines.append(f'**.{src}.app[{app_index}].messageLength = {size}B')
-        ini_lines.append(f'**.{src}.app[{app_index}].sendInterval = {period}us')
-        app_index += 1
+        pcp, name, type_, src, dest, size, period, deadline = stream
+        ini_lines.append(f'# Stream {name}')
+        ini_lines.append(f'**.{src}.numApps = 1')
+        ini_lines.append(f'**.{src}.app[0].typename = "UdpBasicApp"')
+        ini_lines.append(f'**.{src}.app[0].destAddresses = "{dest}"')
+        ini_lines.append(f'**.{src}.app[0].destPort = 1000')
+        ini_lines.append(f'**.{src}.app[0].messageLength = {size}B')
+        ini_lines.append(f'**.{src}.app[0].sendInterval = {period}us')
+        ini_lines.append(f'**.{src}.app[0].priority = {pcp}')
+        ini_lines.append('')
 
-    # Write to .ini file
     with open(os.path.join(OUTPUT_DIR, 'omnetpp.ini'), 'w') as ini_file:
         ini_file.write('\n'.join(ini_lines))
 
 def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    G = create_network()
-    devices, links = generate_topology(G)
-    streams = generate_streams(devices)
-    print(f"Generated streams.csv and topology.csv in {OUTPUT_DIR}")
-    if SHOW_TOPOLOGY:
+    """Main execution function"""
+    try:
+        # Load configuration
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+
+        # Set global variables
+        global SHOW_TOPOLOGY, GENERATE_OMNET_FILES, NETWORK_TYPE, NUM_SWITCHES
+        global NODES_PER_SWITCH, OUTPUT_DIR, traffic_types
+
+        SHOW_TOPOLOGY = config.getboolean('General', 'SHOW_TOPOLOGY', fallback=False)
+        GENERATE_OMNET_FILES = config.getboolean('General', 'GENERATE_OMNET_FILES', fallback=True)
+        NETWORK_TYPE = config.get('General', 'NETWORK_TYPE', fallback='cycle_graph')
+        NUM_SWITCHES = config.getint('General', 'NUM_SWITCHES', fallback=32)
+        NODES_PER_SWITCH = config.getint('General', 'NODES_PER_SWITCH', fallback=3)
+        OUTPUT_DIR = config.get('Output', 'OUTPUT_DIR', fallback='simulation_output')
+
+        # Load traffic types
+        traffic_types = {}
+        for tt in config.items('TrafficTypes'):
+            tt_name = tt[0]
+            streams_per_es = int(tt[1])
+            traffic_types[tt_name] = {
+                'StreamsPerES': streams_per_es,
+                'Parameters': {}
+            }
+            
+            if config.has_section(tt_name):
+                for param, value in config.items(tt_name):
+                    if param in ['period', 'size', 'deadline']:
+                        value = [int(x.strip()) for x in value.strip('[]').split(',')]
+                    traffic_types[tt_name]['Parameters'][param] = value
+
+        # Create output directory
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+        # Generate network and configurations
+        G = create_network()
+        devices, links = generate_topology(G)
+        streams = generate_streams(devices)
         visualize_topology(G)
-    if GENERATE_OMNET_FILES:
-        generate_ned_file(G)
-        generate_ini_file(streams)
-        print(f"Generated OMNeT++ .ned and .ini files in {OUTPUT_DIR}")
+
+        if GENERATE_OMNET_FILES:
+            generate_ned_file(G)
+            generate_ini_file(streams)
+
+        print(f"Generated files in {OUTPUT_DIR}:")
+        print(f"- topology.csv: Network topology definition")
+        print(f"- streams.csv: Stream configurations")
+        print(f"- topology.png: Network visualization")
+        if GENERATE_OMNET_FILES:
+            print(f"- Network.ned: OMNeT++ network description")
+            print(f"- omnetpp.ini: OMNeT++ initialization file")
+
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()
+    
