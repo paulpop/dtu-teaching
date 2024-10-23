@@ -1,8 +1,9 @@
 # TSN Test Case Generator
 
-Contacts: 
-Andrei-Robert Cuzenco s242817@student.dtu.dk
-Paul Pop paupo@dtu.dk
+## Contacts: 
+
+- Andrei-Robert Cuzenco s242817@student.dtu.dk
+- Paul Pop paupo@dtu.dk
 
 A tool for generating Time-Sensitive Networking (TSN) test cases with configurable network topologies and stream configurations.
 
