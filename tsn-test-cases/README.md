@@ -20,6 +20,10 @@ Run the generator with default configuration:
 python3 tsn-test-case-generator.py
 ```
 
+## Disclaimer
+
+Don't forget to change the project names from the generated OMNeT++ files otherwise you will get an error when importing.
+
 ### Configuration
 
 The tool uses a `config.ini` file for all settings. Key configuration options include:
@@ -70,6 +74,7 @@ The tool generates several files in the specified output directory:
 
 4. OMNeT++ files (if enabled):
    - `Network.ned`: Network description
+   TODO:
    - `omnetpp.ini`: Simulation configuration
 
 ### Example Usage

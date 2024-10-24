@@ -141,70 +141,71 @@ def generate_streams(devices):
             writer.writerow(stream)
     return streams
 
-def visualize_topology(G):
-    """Creates a visualization of the network topology"""
+def visualize_topology(devices, links):
+    """Creates a visualization of the network topology including switches and end systems"""
+    H = nx.Graph()
+    # Add devices as nodes with type attribute
+    for device in devices:
+        device_type, device_name, _ = device
+        H.add_node(device_name, type=device_type)
+    # Add links as edges
+    for link in links:
+        # LINK, link_id, node1, port1, node2, port2
+        _, _, node1, _, node2, _ = link
+        H.add_edge(node1, node2)
+    # Now draw the graph
     plt.figure(figsize=(12, 8))
-    pos = nx.spring_layout(G)
-    nx.draw(G, pos, with_labels=True, node_color='lightblue', 
-            node_size=500, font_size=8, font_weight='bold')
+    pos = nx.spring_layout(H)
+    node_types = nx.get_node_attributes(H, 'type')
+    node_colors = []
+    for node in H.nodes():
+        if node_types[node] == 'SW':
+            node_colors.append('lightblue')
+        elif node_types[node] == 'ES':
+            node_colors.append('lightgreen')
+        else:
+            node_colors.append('grey')
+    nx.draw(H, pos, with_labels=True, node_color=node_colors,
+            node_size=600, font_size=8, font_weight='bold')
     plt.title(f'Network Topology: {NETWORK_TYPE} ({NUM_SWITCHES} switches)')
     plt.savefig(os.path.join(OUTPUT_DIR, 'topology.png'))
     if SHOW_TOPOLOGY:
         plt.show()
     plt.close()
 
-def generate_ned_file(G):
+
+def generate_ned_file(devices, links):
     """Generates OMNeT++ network description file"""
     ned_lines = []
     ned_lines.append('package tsn;')
     ned_lines.append('')
-    ned_lines.append('import inet.node.ethernet.EtherSwitch;')
-    ned_lines.append('import inet.node.inet.StandardHost;')
-    ned_lines.append('import inet.networklayer.configurator.ipv4.Ipv4NetworkConfigurator;')
+    ned_lines.append('import inet.networks.base.TsnNetworkBase;')
+    ned_lines.append('import inet.node.ethernet.Eth1G;')
+    ned_lines.append('import inet.node.tsn.TsnDevice;')
+    ned_lines.append('import inet.node.tsn.TsnSwitch;')
     ned_lines.append('')
     ned_lines.append(f'network TSN_Network {{')
     ned_lines.append('    @display("bgb=1000,1000");')
     ned_lines.append('    submodules:')
-    ned_lines.append('        configurator: Ipv4NetworkConfigurator {')
-    ned_lines.append('            @display("p=100,100");')
-    ned_lines.append('        }')
-    for node in G.nodes():
-        ned_lines.append(f'        {node}: EtherSwitch {{}}')
+    for device in devices:
+        node_type, node, _ = device
+        if node_type == 'ES':
+            ned_lines.append(f'        {node}: TsnDevice {{}}')
+        elif node_type == 'SW':
+            ned_lines.append(f'        {node}: TsnSwitch {{}}')
     ned_lines.append('    connections:')
-    for edge in G.edges():
-        ned_lines.append(f'        {edge[0]}.ethg++ <--> {{datarate = 100Mbps;}} <--> {edge[1]}.ethg++;')
+    for link in links:
+        _, _, node1, _, node2, _ = link
+        ned_lines.append(f'        {node1}.ethg++ <--> Eth1G <--> {node2}.ethg++;')
     ned_lines.append('}')
 
     with open(os.path.join(OUTPUT_DIR, 'Network.ned'), 'w') as ned_file:
         ned_file.write('\n'.join(ned_lines))
 
-def generate_ini_file(streams):
-    """Generates OMNeT++ initialization file"""
+def generate_ini_file(devices, streams):
+    """Generates OMNeT++ initialization file resembling the provided sample"""
+    # TODO: Implement this function
     ini_lines = []
-    ini_lines.append('[General]')
-    ini_lines.append('network = TSN_Network')
-    ini_lines.append('sim-time-limit = 1s')
-    ini_lines.append('')
-    ini_lines.append('# Switch configuration')
-    ini_lines.append('**.switch*.eth[*].mac.queue.typename = "EtherQosQueue"')
-    ini_lines.append('**.switch*.eth[*].mac.queue.dataQueue.typename = "DropTailQueue"')
-    ini_lines.append('')
-    
-    # Configure traffic streams
-    for stream in streams:
-        pcp, name, type_, src, dest, size, period, deadline = stream
-        ini_lines.append(f'# Stream {name}')
-        ini_lines.append(f'**.{src}.numApps = 1')
-        ini_lines.append(f'**.{src}.app[0].typename = "UdpBasicApp"')
-        ini_lines.append(f'**.{src}.app[0].destAddresses = "{dest}"')
-        ini_lines.append(f'**.{src}.app[0].destPort = 1000')
-        ini_lines.append(f'**.{src}.app[0].messageLength = {size}B')
-        ini_lines.append(f'**.{src}.app[0].sendInterval = {period}us')
-        ini_lines.append(f'**.{src}.app[0].priority = {pcp}')
-        ini_lines.append('')
-
-    with open(os.path.join(OUTPUT_DIR, 'omnetpp.ini'), 'w') as ini_file:
-        ini_file.write('\n'.join(ini_lines))
 
 def main():
     """Main execution function"""
@@ -247,11 +248,11 @@ def main():
         G = create_network()
         devices, links = generate_topology(G)
         streams = generate_streams(devices)
-        visualize_topology(G)
+        visualize_topology(devices, links)
 
         if GENERATE_OMNET_FILES:
-            generate_ned_file(G)
-            generate_ini_file(streams)
+            generate_ned_file(devices, links)
+            # generate_ini_file(devices, streams)
 
         print(f"Generated files in {OUTPUT_DIR}:")
         print(f"- topology.csv: Network topology definition")
@@ -259,7 +260,7 @@ def main():
         print(f"- topology.png: Network visualization")
         if GENERATE_OMNET_FILES:
             print(f"- Network.ned: OMNeT++ network description")
-            print(f"- omnetpp.ini: OMNeT++ initialization file")
+            # print(f"- omnetpp.ini: OMNeT++ initialization file")
 
     except Exception as e:
         print(f"Error: {str(e)}")
