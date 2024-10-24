@@ -74,8 +74,6 @@ The tool generates several files in the specified output directory:
 
 4. OMNeT++ files (if enabled):
    - `Network.ned`: Network description
-   TODO:
-   - `omnetpp.ini`: Simulation configuration
 
 ### Example Usage
 
