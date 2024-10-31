@@ -231,38 +231,28 @@ def generate_ini_file(devices, streams):
 
     ini_lines.extend(ini_fixed_lines)
 
-    # Process devices and streams to generate node-specific parts
     es_nodes = [device[1] for device in devices if device[0] == 'ES']
 
-    # Initialize per-node data
     source_streams_per_node = {node: [] for node in es_nodes}
     dest_streams_per_node = {node: [] for node in es_nodes}
 
-    # Assign port numbers
     stream_to_port = {}
     port_counter = 1
     for stream in streams:
         pcp, stream_name, stream_type, source_node, dest_node, size, period, deadline = stream
-        # Assign port number to stream
         stream_to_port[stream_name] = port_counter
         port_counter += 1
-        # Collect streams per node
         source_streams_per_node[source_node].append(stream)
         dest_streams_per_node[dest_node].append(stream)
 
-    # For each node, generate numApps
     for node in es_nodes:
         num_source_apps = len(source_streams_per_node[node])
         num_dest_apps = len(dest_streams_per_node[node])
         num_apps = num_source_apps + num_dest_apps
         ini_lines.append(f'*.{node}.numApps = {num_apps}')
 
-    # Now, for each node, generate app definitions
     for node in es_nodes:
-        apps = []
-        # Indexing of apps
         app_index = 0
-        # First, source apps
         source_streams = source_streams_per_node[node]
         if source_streams:
             app_indices = f'[{app_index}..{app_index+len(source_streams)-1}]' if len(source_streams) > 1 else f'[{app_index}]'
@@ -277,7 +267,6 @@ def generate_ini_file(devices, streams):
                 ini_lines.append(f'*.{node}.app[{app_index}].source.initialProductionOffset = {period}us')
                 ini_lines.append(f'*.{node}.app[{app_index}].source.packetLength = {size}B')
                 app_index += 1
-        # Then, destination apps
         dest_streams = dest_streams_per_node[node]
         if dest_streams:
             app_indices = f'[{app_index}..{app_index+len(dest_streams)-1}]' if len(dest_streams) > 1 else f'[{app_index}]'
@@ -288,7 +277,6 @@ def generate_ini_file(devices, streams):
                 ini_lines.append(f'*.{node}.app[{app_index}].io.localPort = {port}')
                 app_index += 1
 
-    # Append the rest of the ini file
     ini_fixed_lines_after_nodes = [
         '',
         '*.node*.hasUdp = firstAvailableOrEmpty("Udp") != ""',
@@ -395,7 +383,7 @@ def main():
         print(f"- topology.png: Network visualization")
         if GENERATE_OMNET_FILES:
             print(f"- Network.ned: OMNeT++ network description")
-            # print(f"- omnetpp.ini: OMNeT++ initialization file")
+            print(f"- omnetpp.ini: OMNeT++ initialization file")
 
     except Exception as e:
         print(f"Error: {str(e)}")
