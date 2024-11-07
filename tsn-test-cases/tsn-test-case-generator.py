@@ -135,8 +135,8 @@ def generate_streams(devices):
     # Write to streams.csv
     with open(os.path.join(OUTPUT_DIR, 'streams.csv'), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(['PCP', 'StreamName', 'StreamType', 'SourceNode', 'DestinationNode', 
-                        'Size', 'Period', 'Deadline'])  # Header
+        # writer.writerow(['PCP', 'StreamName', 'StreamType', 'SourceNode', 'DestinationNode', 
+        #                 'Size', 'Period', 'Deadline'])  # Header
         for stream in streams:
             writer.writerow(stream)
     return streams
@@ -279,47 +279,60 @@ def generate_ini_file(devices, streams):
 
     ini_fixed_lines_after_nodes = [
         '',
-        '*.node*.hasUdp = firstAvailableOrEmpty("Udp") != ""',
+        '*.ES*.hasUdp = firstAvailableOrEmpty("Udp") != ""',
         '',
         '# steering stream identification and coding',
-        '*.node*.bridging.streamIdentifier.identifier.mapping = [',
-        '    {stream: "ats", packetFilter: expr(udp.destPort == 1)}]',
+        '*.ES*.bridging.streamIdentifier.identifier.mapping = ',
+    ]
+    newline = ' [{stream: "ats", packetFilter: expr('
+    for i in range(1,port_counter):
+        # udp.destPort == 1,
+        newline += f'udp.destPort == {i} || ' if i < port_counter-1 else f'udp.destPort == {i}'
+    newline += ')}]'
+    ini_fixed_lines_after_nodes += [
+        f'{newline}',
         '',
-        '# traffic configuration',
-        '*.*.eth[*].macLayer.queue.numTrafficClasses = 1',
-        '*.*.eth[*].macLayer.queue.numQueues = 1',
-        '*.*.eth[*].macLayer.queue.*[0].display-name = "ats"',
+        '*.ES*.bridging.streamFilter.ingress.classifier.mapping = { "ats": 0 }',
+        '*.ES*.eth[*].macLayer.queue.numTrafficClasses = 1',
+        '*.ES*.eth[*].macLayer.queue.numQueues = 1',
+        '*.ES*.eth[*].macLayer.queue.*[0].display-name = "ats"',
         '',
         '# client stream encoding',
-        '*.*.bridging.streamCoder.encoder.mapping = [{stream: "ats", pcp: 6}]',
+        '*.ES*.bridging.streamCoder.encoder.mapping = [{stream: "ats", pcp: 6}]',
         '',
         '# enable streams',
-        '*.*.hasIncomingStreams = true',
-        '*.*.hasOutgoingStreams = true',
+        '*.Switch*.hasIncomingStreams = true',
+        '*.Switch*.hasOutgoingStreams = true',
+        '*.ES*.hasIncomingStreams = true',
+        '*.ES*.hasOutgoingStreams = true',
         '',
         '# stream coder mappings for switches',
-        '*.sw*.bridging.streamCoder.encoder.mapping = [{stream: "ats", pcp: 6}]',
-        '*.sw*.bridging.streamCoder.decoder.mapping = [{stream: "ats", pcp: 6}]',
-        '*.sw*.eth[*].macLayer.queue.classifier.mapping = [[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 1], [0, 0, 0], [0, 1, 2]]',
+        '*.Switch*.bridging.streamCoder.encoder.mapping = [{stream: "ats", pcp: 6}]',
+        '*.Switch*.bridging.streamCoder.decoder.mapping = [{stream: "ats", pcp: 6}]',
+        '*.Switch*.eth[*].macLayer.queue.classifier.mapping = [[0], [0], [0], [0], [0], [0], [0], [0]]',
         '',
         '# enable ingress per-stream filtering',
-        '*.sw*.hasIngressTrafficFiltering = true',
+        '*.Switch*.hasIngressTrafficFiltering = true',
         '',
         '# enable egress traffic shaping',
         '*.*.hasEgressTrafficShaping = true',
         '',
         '# asynchronous shaper traffic metering',
-        '*.sw*.bridging.streamFilter.ingress.numStreams = 1',
-        '*.sw*.bridging.streamFilter.ingress.classifier.mapping = { "ats": 0}',
-        '*.sw*.bridging.streamFilter.ingress.*[0].display-name = "ats"',
-        '*.sw*.bridging.streamFilter.ingress.meter[*].typename = "EligibilityTimeMeter"',
-        '*.sw*.bridging.streamFilter.ingress.filter[*].typename = "EligibilityTimeFilter"',
+        '*.Switch*.bridging.streamFilter.ingress.numStreams = 1',
+        '*.Switch*.bridging.streamFilter.ingress.classifier.mapping = { "ats": 0 }',
+        '*.Switch*.bridging.streamFilter.ingress.*[0].display-name = "ats"',
+        '*.Switch*.bridging.streamFilter.ingress.meter[*].typename = "EligibilityTimeMeter"',
+        '*.Switch*.bridging.streamFilter.ingress.filter[*].typename = "EligibilityTimeFilter"',
         '',
-        '*.sw*.bridging.streamFilter.ingress.meter[0].committedInformationRate = 10Mbps',
-        '*.sw*.bridging.streamFilter.ingress.meter[0].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[0].committedInformationRate = 10Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[0].committedBurstSize = 500B',
         '',
         '# asynchronous traffic shaping',
-        '*.sw*.eth[*].macLayer.queue.transmissionSelectionAlgorithm[*].typename = "Ieee8021qAsynchronousShaper"',
+        '*.Switch*.eth[*].macLayer.queue.numTrafficClasses = 1',
+        '*.Switch*.eth[*].macLayer.queue.numQueues = 1',
+        '*.Switch*.eth[*].macLayer.queue.*[0].display-name = "ats"',
+        '*.Switch*.eth[*].macLayer.queue.queue[*].typename = "EligibilityTimeQueue"',
+        '*.Switch*.eth[*].macLayer.queue.transmissionSelectionAlgorithm[*].typename = "Ieee8021qAsynchronousShaper"',
         '',
     ]
 
