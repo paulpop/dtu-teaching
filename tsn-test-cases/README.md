@@ -24,6 +24,8 @@ python3 tsn-test-case-generator.py
 
 Don't forget to change the project names from the generated OMNeT++ files otherwise you will get an error when importing.
 
+Increasing the size for the ats category above 1000 in the config might produce unexpected results.
+
 ### Configuration
 
 The tool uses a `config.ini` file for all settings. Key configuration options include:
@@ -51,7 +53,7 @@ ATS = 2    # Number of streams per end system
 
 [ats]
 period = [500,1000,2000]    # Possible periods in microseconds
-size = [500,1500]           # Size range in bytes
+size = [500,1000]           # Size range in bytes
 deadline = [1000,20000]     # Deadline range in microseconds
 ```
 
