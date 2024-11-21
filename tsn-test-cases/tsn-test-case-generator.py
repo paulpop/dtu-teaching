@@ -251,6 +251,8 @@ def generate_ini_file(devices, streams):
         num_apps = num_source_apps + num_dest_apps
         ini_lines.append(f'*.{node}.numApps = {num_apps}')
 
+    streams_pcp_mapping = {0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: []}
+
     for node in es_nodes:
         app_index = 0
         source_streams = source_streams_per_node[node]
@@ -260,7 +262,8 @@ def generate_ini_file(devices, streams):
             for stream in source_streams:
                 pcp, stream_name, stream_type, source_node, dest_node, size, period, deadline = stream
                 port = stream_to_port[stream_name]
-                ini_lines.append(f'*.{node}.app[{app_index}].display-name = "{stream_type}"')
+                streams_pcp_mapping[pcp].append(port)
+                ini_lines.append(f'*.{node}.app[{app_index}].display-name = "ats-p{pcp}"')
                 ini_lines.append(f'*.{node}.app[{app_index}].io.destAddress = "{dest_node}"')
                 ini_lines.append(f'*.{node}.app[{app_index}].io.destPort = {port}')
                 ini_lines.append(f'*.{node}.app[{app_index}].source.productionInterval = {period}us')
@@ -282,23 +285,36 @@ def generate_ini_file(devices, streams):
         '*.ES*.hasUdp = firstAvailableOrEmpty("Udp") != ""',
         '',
         '# steering stream identification and coding',
-        '*.ES*.bridging.streamIdentifier.identifier.mapping = ',
     ]
-    newline = ' [{stream: "ats", packetFilter: expr('
-    for i in range(1,port_counter):
-        # udp.destPort == 1,
-        newline += f'udp.destPort == {i} || ' if i < port_counter-1 else f'udp.destPort == {i}'
-    newline += ')}]'
+    mapping_entries = []
+    for i in range(0,8):
+        pcp = i
+        port = streams_pcp_mapping[pcp]
+        if len(port) > 0:
+            mapping = '{stream :"ats-p' + str(pcp) + '", packetFilter: expr('
+            for j in port:
+                mapping += f'udp.destPort == {j} || '
+            mapping = mapping[:-4]
+            mapping += ')}'
+            mapping_entries.append(mapping)
+    mapping_str = '[' + ', '.join(mapping_entries) + ']'
     ini_fixed_lines_after_nodes += [
-        f'{newline}',
+        f'*.ES*.bridging.streamIdentifier.identifier.mapping = {mapping_str}',
         '',
-        '*.ES*.bridging.streamFilter.ingress.classifier.mapping = { "ats": 0 }',
-        '*.ES*.eth[*].macLayer.queue.numTrafficClasses = 1',
-        '*.ES*.eth[*].macLayer.queue.numQueues = 1',
-        '*.ES*.eth[*].macLayer.queue.*[0].display-name = "ats"',
+        '*.ES*.bridging.streamFilter.ingress.classifier.mapping = { "ats-p0": 0 , "ats-p1": 1, "ats-p2": 2, "ats-p3": 3, "ats-p4": 4, "ats-p5": 5, "ats-p6": 6, "ats-p7": 7}',
+        '*.ES*.eth[*].macLayer.queue.numTrafficClasses = 8',
+        '*.ES*.eth[*].macLayer.queue.numQueues = 8',
+        '*.ES*.eth[*].macLayer.queue.*[0].display-name = "ats-p0"',
+        '*.ES*.eth[*].macLayer.queue.*[1].display-name = "ats-p1"',
+        '*.ES*.eth[*].macLayer.queue.*[2].display-name = "ats-p2"',
+        '*.ES*.eth[*].macLayer.queue.*[3].display-name = "ats-p3"',
+        '*.ES*.eth[*].macLayer.queue.*[4].display-name = "ats-p4"',
+        '*.ES*.eth[*].macLayer.queue.*[5].display-name = "ats-p5"',
+        '*.ES*.eth[*].macLayer.queue.*[6].display-name = "ats-p6"',
+        '*.ES*.eth[*].macLayer.queue.*[7].display-name = "ats-p7"',
         '',
         '# client stream encoding',
-        '*.ES*.bridging.streamCoder.encoder.mapping = [{stream: "ats", pcp: 6}]',
+        '*.ES*.bridging.streamCoder.encoder.mapping = [{stream: "ats-p0", pcp: 0}, {stream: "ats-p1", pcp: 1}, {stream: "ats-p2", pcp: 2}, {stream: "ats-p3", pcp: 3}, {stream: "ats-p4", pcp: 4}, {stream: "ats-p5", pcp: 5}, {stream: "ats-p6", pcp: 6}, {stream: "ats-p7", pcp: 7}]',
         '',
         '# enable streams',
         '*.Switch*.hasIncomingStreams = true',
@@ -307,9 +323,9 @@ def generate_ini_file(devices, streams):
         '*.ES*.hasOutgoingStreams = true',
         '',
         '# stream coder mappings for switches',
-        '*.Switch*.bridging.streamCoder.encoder.mapping = [{stream: "ats", pcp: 6}]',
-        '*.Switch*.bridging.streamCoder.decoder.mapping = [{stream: "ats", pcp: 6}]',
-        '*.Switch*.eth[*].macLayer.queue.classifier.mapping = [[0], [0], [0], [0], [0], [0], [0], [0]]',
+        '*.Switch*.bridging.streamCoder.encoder.mapping = [{stream: "ats-p0", pcp: 0}, {stream: "ats-p1", pcp: 1}, {stream: "ats-p2", pcp: 2}, {stream: "ats-p3", pcp: 3}, {stream: "ats-p4", pcp: 4}, {stream: "ats-p5", pcp: 5}, {stream: "ats-p6", pcp: 6}, {stream: "ats-p7", pcp: 7}]',
+        '*.Switch*.bridging.streamCoder.decoder.mapping = [{stream: "ats-p0", pcp: 0}, {stream: "ats-p1", pcp: 1}, {stream: "ats-p2", pcp: 2}, {stream: "ats-p3", pcp: 3}, {stream: "ats-p4", pcp: 4}, {stream: "ats-p5", pcp: 5}, {stream: "ats-p6", pcp: 6}, {stream: "ats-p7", pcp: 7}]',
+        '*.Switch*.eth[*].macLayer.queue.classifier.mapping = [[0,0,0,0,0,0,0,0], [1,1,1,1,1,1,1,1], [2,2,2,2,2,2,2,2], [3,3,3,3,3,3,3,3], [4,4,4,4,4,4,4,4], [5,5,5,5,5,5,5,5], [6,6,6,6,6,6,6,6], [7,7,7,7,7,7,7,7]]',
         '',
         '# enable ingress per-stream filtering',
         '*.Switch*.hasIngressTrafficFiltering = true',
@@ -318,19 +334,47 @@ def generate_ini_file(devices, streams):
         '*.*.hasEgressTrafficShaping = true',
         '',
         '# asynchronous shaper traffic metering',
-        '*.Switch*.bridging.streamFilter.ingress.numStreams = 1',
-        '*.Switch*.bridging.streamFilter.ingress.classifier.mapping = { "ats": 0 }',
-        '*.Switch*.bridging.streamFilter.ingress.*[0].display-name = "ats"',
+        '*.Switch*.bridging.streamFilter.ingress.numStreams = 8',
+        '*.Switch*.bridging.streamFilter.ingress.classifier.mapping = { "ats-p0": 0 , "ats-p1": 1, "ats-p2": 2, "ats-p3": 3, "ats-p4": 4, "ats-p5": 5, "ats-p6": 6, "ats-p7": 7 }',
+        '*.Switch*.bridging.streamFilter.ingress.*[0].display-name = "ats-p0"',
+        '*.Switch*.bridging.streamFilter.ingress.*[1].display-name = "ats-p1"',
+        '*.Switch*.bridging.streamFilter.ingress.*[2].display-name = "ats-p2"',
+        '*.Switch*.bridging.streamFilter.ingress.*[3].display-name = "ats-p3"',
+        '*.Switch*.bridging.streamFilter.ingress.*[4].display-name = "ats-p4"',
+        '*.Switch*.bridging.streamFilter.ingress.*[5].display-name = "ats-p5"',
+        '*.Switch*.bridging.streamFilter.ingress.*[6].display-name = "ats-p6"',
+        '*.Switch*.bridging.streamFilter.ingress.*[7].display-name = "ats-p7"',
         '*.Switch*.bridging.streamFilter.ingress.meter[*].typename = "EligibilityTimeMeter"',
         '*.Switch*.bridging.streamFilter.ingress.filter[*].typename = "EligibilityTimeFilter"',
         '',
-        '*.Switch*.bridging.streamFilter.ingress.meter[0].committedInformationRate = 10Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[0].committedInformationRate = 100Mbps',
         '*.Switch*.bridging.streamFilter.ingress.meter[0].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[1].committedInformationRate = 100Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[1].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[2].committedInformationRate = 100Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[2].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[3].committedInformationRate = 100Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[3].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[4].committedInformationRate = 100Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[4].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[5].committedInformationRate = 100Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[5].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[6].committedInformationRate = 100Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[6].committedBurstSize = 500B',
+        '*.Switch*.bridging.streamFilter.ingress.meter[7].committedInformationRate = 100Mbps',
+        '*.Switch*.bridging.streamFilter.ingress.meter[7].committedBurstSize = 500B',
         '',
         '# asynchronous traffic shaping',
-        '*.Switch*.eth[*].macLayer.queue.numTrafficClasses = 1',
-        '*.Switch*.eth[*].macLayer.queue.numQueues = 1',
-        '*.Switch*.eth[*].macLayer.queue.*[0].display-name = "ats"',
+        '*.Switch*.eth[*].macLayer.queue.numTrafficClasses = 8',
+        '*.Switch*.eth[*].macLayer.queue.numQueues = 8',
+        '*.Switch*.eth[*].macLayer.queue.*[0].display-name = "ats-p0"',
+        '*.Switch*.eth[*].macLayer.queue.*[1].display-name = "ats-p1"',
+        '*.Switch*.eth[*].macLayer.queue.*[2].display-name = "ats-p2"',
+        '*.Switch*.eth[*].macLayer.queue.*[3].display-name = "ats-p3"',
+        '*.Switch*.eth[*].macLayer.queue.*[4].display-name = "ats-p4"',
+        '*.Switch*.eth[*].macLayer.queue.*[5].display-name = "ats-p5"',
+        '*.Switch*.eth[*].macLayer.queue.*[6].display-name = "ats-p6"',
+        '*.Switch*.eth[*].macLayer.queue.*[7].display-name = "ats-p7"',
         '*.Switch*.eth[*].macLayer.queue.queue[*].typename = "EligibilityTimeQueue"',
         '*.Switch*.eth[*].macLayer.queue.transmissionSelectionAlgorithm[*].typename = "Ieee8021qAsynchronousShaper"',
         '',
